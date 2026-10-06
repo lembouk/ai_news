@@ -23,7 +23,7 @@ def gnews(q):
 SOURCES = {
     "🧠 Nouveaux modèles & labos": [
         ("OpenAI", "rss", "https://openai.com/news/rss.xml"),
-        ("Google DeepMind", "rss", "https://deepmind.google/blog/rss.xml"),
+        ("Google AI", "rss", "https://blog.google/technology/ai/rss/"),
         ("Hugging Face", "rss", "https://huggingface.co/blog/feed.xml"),
         ("Google News", "rss", gnews('"Anthropic" OR "Claude" OR "Gemini" OR "GPT" new model release')),
     ],
@@ -161,18 +161,36 @@ def collect(seen):
 def build_embeds(result):
     embeds = []
     for cat, items in result.items():
-        lines = []
+        lines, size = [], 0
         for it in items:
             title = it["title"].replace("[", "(").replace("]", ")")
             title = title if len(title) <= 110 else title[:107] + "…"
-            lines.append(f"• [{title}]({it['link']}) · *{it['source']}*")
-        embeds.append({"title": cat, "description": "\n".join(lines)[:4000], "color": 0x5865F2})
+            line = f"• [{title}]({it['link']}) · *{it['source']}*"
+            if size + len(line) > 3500:      # garde-fou : un embed reste petit
+                break
+            lines.append(line)
+            size += len(line) + 1
+        if lines:
+            embeds.append({"title": cat, "description": "\n".join(lines), "color": 0x5865F2})
     return embeds
 
 
-def send_discord(embeds):
-    payload = {"content": f"☀️ **Brief IA — {datetime.now().strftime('%d/%m/%Y')}**",
-               "embeds": embeds[:10]}
+def pack_messages(embeds, limit=5000):
+    """Discord refuse > 6000 caractères d'embeds par message : on découpe en plusieurs messages."""
+    msgs, cur, size = [], [], 0
+    for e in embeds:
+        n = len(e["title"]) + len(e["description"])
+        if cur and (size + n > limit or len(cur) >= 10):
+            msgs.append(cur)
+            cur, size = [], 0
+        cur.append(e)
+        size += n
+    if cur:
+        msgs.append(cur)
+    return msgs
+
+
+def _post(payload):
     for attempt in range(2):
         req = urllib.request.Request(
             WEBHOOK, data=json.dumps(payload).encode(), method="POST",
@@ -187,6 +205,17 @@ def send_discord(embeds):
             print(f"❌ Discord HTTP {e.code} : {e.read()[:200]}", file=sys.stderr)
             return False
     return False
+
+
+def send_discord(embeds):
+    ok = True
+    for i, msg in enumerate(pack_messages(embeds)):
+        payload = {"embeds": msg}
+        if i == 0:
+            payload["content"] = f"☀️ **Brief IA — {datetime.now().strftime('%d/%m/%Y')}**"
+        ok = _post(payload) and ok
+        time.sleep(1)
+    return ok
 
 
 def main():
