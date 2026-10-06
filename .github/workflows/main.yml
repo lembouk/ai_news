@@ -2,25 +2,46 @@ name: Brief IA quotidien
 
 on:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "5 7 * * *"
+    - cron: "5 8 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: brief
+  cancel-in-progress: false
+
 jobs:
   brief:
     runs-on: ubuntu-latest
     steps:
+      - name: Verifier l'heure a Paris
+        id: heure
+        run: |
+          H=$(TZ=Europe/Paris date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "09" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "Il est $H h a Paris : on n'envoie rien."
+          fi
       - uses: actions/checkout@v4
+        if: steps.heure.outputs.go == 'true'
       - uses: actions/setup-python@v5
+        if: steps.heure.outputs.go == 'true'
         with:
           python-version: "3.12"
       - name: Envoyer le brief
+        if: steps.heure.outputs.go == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python ia_tracker.py
       - name: Memoriser les liens deja envoyes
+        if: steps.heure.outputs.go == 'true'
         run: |
           git config user.name "ia-tracker"
           git config user.email "ia-tracker@users.noreply.github.com"
