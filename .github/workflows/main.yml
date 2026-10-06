@@ -1,1 +1,28 @@
+name: Brief IA quotidien
 
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Envoyer le brief
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python ia_tracker.py
+      - name: Memoriser les liens deja envoyes
+        run: |
+          git config user.name "ia-tracker"
+          git config user.email "ia-tracker@users.noreply.github.com"
+          git add seen.json
+          git diff --staged --quiet || (git commit -m "chore: update seen.json" && git push)
